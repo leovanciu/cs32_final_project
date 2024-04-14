@@ -14,7 +14,7 @@ ax1.scatter(data['Operation'], data['Speed_Python'], color='red', label='Python'
 ax1.set_ylabel('Speed (s)')
 ax1.set_title('Speed Comparison Between R and Python')
 ax1.legend()
-ax1.set_xticklabels([])
+ax1.set_xticklabels(data['Operation'], rotation=45) 
 
 # Scatter plot for Memory Usage Comparison
 ax2.scatter(data['Operation'], data['Memory_R'], color='blue', label='R')
@@ -22,8 +22,8 @@ ax2.scatter(data['Operation'], data['Memory_Python'], color='red', label='Python
 ax2.set_ylabel('Memory (MB)')
 ax2.set_title('Memory Usage Comparison Between R and Python')
 ax2.legend()
+ax2.set_xticklabels(data['Operation'], rotation=45) 
 
 # Improve layout and display the plots
-plt.xticks(rotation=45)
 plt.tight_layout()
 plt.savefig("/Users/ancavanciupopescu/Desktop/Classes/CS 32/Final project/Results/Results.pdf")
