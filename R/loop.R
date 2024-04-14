@@ -4,7 +4,7 @@ data <- read.csv("loop_data.csv")[,2]
 
 # Generic loop to compute geometric mean
 geometric_mean_loop <- function(data) {
-  if (any(data <= 0)) return(NA)  # Geometric mean is not defined for non-positive values
+  if (any(data <= 0)) return(NA)
   log_sum <- 0
   n <- length(data)
   for (num in data) {
@@ -15,7 +15,7 @@ geometric_mean_loop <- function(data) {
 
 # Vectorized computation of geometric mean
 geometric_mean_vectorized <- function(data) {
-  if (any(data <= 0)) return(NA)  # Geometric mean is not defined for non-positive values
+  if (any(data <= 0)) return(NA)
   return(exp(mean(log(data))))
 }
 
