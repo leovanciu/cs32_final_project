@@ -13,8 +13,8 @@ import cmdstanpy
 # Generic loop sum
 def loop_sum(n):
     sum = 0
-    for i in range(1,(n+1)):
-        sum += i
+    for i in range(n):
+        sum += 1
     return sum
 
 # Loop for geometric mean
@@ -26,8 +26,7 @@ def loop_geom_mean(data):
 
 # Vectorized computation of geometric mean
 def vectorized_geom_mean(data):
-    log_sum = np.sum(np.log(data))
-    return np.exp(log_sum / len(data))
+    return np.exp(np.sum(np.log(data)) / len(data))
 
 # Linear regression from base
 def lin_reg_base(X, y):
@@ -51,17 +50,17 @@ def invert_matrix(A):
     return np.linalg.inv(A)
 
 # scipy.stats bootstrap
-def bootstrap_scipy(data, statistic, n_resamples, confidence_level=0.95):
-    res = stats.bootstrap((data,), statistic, n_resamples=n_resamples, confidence_level=confidence_level, method='percentile')
+def bootstrap_scipy(data, statistic, B, confidence_level=0.95):
+    res = stats.bootstrap((data,), statistic, n_resamples=B, confidence_level=confidence_level, method='percentile')
     return res.confidence_interval
 
 # Bootstrap from base
-def bootstrap_base(data, statistic, n_resamples, confidence_level=0.95):
+def bootstrap_base(data, statistic, B):
     n = len(data)
-    idx = np.random.randint(0, n, (n_resamples, n))
+    idx = np.random.randint(0, n, (B, n))
     samples = data[idx]
     stat = statistic(samples)
-    confidence_interval = np.quantile(stat, [((1 - confidence_level) / 2), (1 - (1 - confidence_level) / 2)])
+    confidence_interval = np.quantile(stat, [0.025, 0.975])
     return confidence_interval
 
 def sample_mean(data):
@@ -113,7 +112,7 @@ def svm_sklearn(X, y):
     return clf.coef_[0], clf.intercept_[0]
 
 # SVM from base
-def svm_base(X, y, epochs=500, learning_rate=0.01, C=1.0):
+def svm_base(X, y, epochs=100, learning_rate=0.01, C=1.0):
     w = np.zeros(X.shape[1])
     b = 0
     for epoch in range(epochs):
@@ -130,13 +129,13 @@ def svm_base(X, y, epochs=500, learning_rate=0.01, C=1.0):
 def main():
     start_all = time.time()
     # Load simulated data
-    path = "/Data/linear_regression_data.csv"
+    path = "Data/linear_regression_data.csv"
     data = pd.read_csv(path).iloc[:, 1:]
-    path = "/Data/A_data.csv"
+    path = "Data/A_data.csv"
     A = pd.read_csv(path).iloc[:, 1:].values
-    path = "/Data/B_data.csv"
+    path = "Data/B_data.csv"
     B = pd.read_csv(path).iloc[:, 1:].values
-    path_results = "/Results/Results_python.csv"
+    path_results = "Results/Results_python.csv"
     
     with open(path_results, 'w', newline='') as file:
         # Load file where we record the results
@@ -246,8 +245,10 @@ def main():
             algo_names = ['loop_sum','loop_geom_mean', 'vectorized_geom_mean', 'matrix_multiplication', 'matrix_inversion', 'linear_regression_package',
                       'linear_regression_base', 'bootstrap_package', 'bootstrap_base', 'svm_package', 'svm_base', 'Metropolis_Hastings', 'MCMC_stan']
             for i in range(13):
+                # Save the results in a csv file
                 writer.writerow([algo_names[i], n,  np.median(duration[:,i]), np.median(mem_usage[:,i])])
     end_all = time.time()
+    # Measure total time
     all_time = start_all-end_all
     print(all_time)
 if __name__ == '__main__':

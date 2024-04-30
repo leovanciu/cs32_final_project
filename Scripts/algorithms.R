@@ -5,15 +5,17 @@ library(rstan)
 library(MASS)
 library(dplyr)
 set.seed(32)
+setwd("cs32_final_project/") # Put project file path here
 start <- Sys.time()
 
 ## Define algorithms
 # Generic loop sum
 loop_sum <- function(n) {
+  sum <- 0
   for (i in 1:n) {
-    i = i + 1
+    sum <- sum + 1
   }
-  return(i)
+  return(sum)
 }
 
 # Loop for geometric mean
@@ -54,6 +56,7 @@ invert_matrix <- function(A) {
   return(solve(A))
 }
 
+# Bootstrap from boot
 bootstrap_package <- function(data, statistic, R) {
   result <- boot(data, statistic = statistic, R = R)
   ci <- boot.ci(result, type = "perc")$percent[4:5]
@@ -61,16 +64,13 @@ bootstrap_package <- function(data, statistic, R) {
 }
 
 # Bootstrap from base
-bootstrap_base <- function(data, statistic, n_resamples) {
+bootstrap_base <- function(data, statistic, B) {
   n <- length(data)
-  results <- numeric(n_resamples)
-  for (i in 1:n_resamples) {
-    resampled <- sample(data, replace = TRUE)
-    results[i] <- statistic(resampled)
-  }
+  results <- replicate(B, statistic(sample(data, size = length(data), replace = TRUE)))
   ci <- quantile(results, probs = c(0.025, 0.975))
   return(ci)
 }
+
 
 mean_boot <- function(data, indices) {
   mean(data[indices])
@@ -151,15 +151,16 @@ MCMC_stan <- function(X, y, num_samples) {
 
 ## Run algorithms and record execution time and memory
 # Load simulated data
-A <- as.matrix(read.csv("/Data/A.csv")[,-1])
-B <- as.matrix(read.csv("/Data/B.csv")[,-1])
-data <- read.csv("/Data/data.csv")[,-1]
+A <- as.matrix(read.csv("Data/A.csv")[,-1])
+B <- as.matrix(read.csv("Data/B.csv")[,-1])
+data <- read.csv("Data/data.csv")[,-1]
 results_list <- list()
 algo_names <- c('loop_sum','loop_geom_mean', 'vectorized_geom_mean', 'matrix_multiplication', 'matrix_inversion', 'linear_regression_package',
               'linear_regression_base', 'bootstrap_package', 'bootstrap_base', 'svm_package', 'svm_base', 'Metroplis-Hastings_base', 'MCMC_stan')
 
 
 for (log_n in 2:6) {
+  # Slice subset of data
   print(log_n)
   n <- 10^log_n
   n_loop <- n / 10
@@ -191,7 +192,8 @@ for (log_n in 2:6) {
     iterations = 10,
     check = FALSE
   )
-
+  
+  # Create result dataframe and store it in a list
   result <- result %>%
     mutate(n = n) %>%
     select(expression, median, mem_alloc, n) %>%
@@ -208,9 +210,11 @@ for (log_n in 2:6) {
   results_list[[length(results_list) + 1]] <- result
 }
 
+# Save results in csv file
 all_results <- bind_rows(results_list)
-path_results = "/Results/Results_R.csv"
+path_results = "Results/Results_R.csv"
 write.csv(all_results, path_results, row.names = FALSE)
 
+# Measure total time
 end <- Sys.time()
 end-start

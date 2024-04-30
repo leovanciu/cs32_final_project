@@ -1,0 +1,1110 @@
+---
+title: "Comparison of Computational Performance of R and Python for Data Science"
+output: 
+  html_document:
+    code_download: true
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+    toc_depth: 3
+    number_sections: true
+    theme: lumen
+---
+```{r, setup, echo=FALSE}
+library(reticulate)
+knitr::opts_knit$set(root.dir = "/Users/ancavanciupopescu/Desktop/Classes/CS 32/cs32_final_project/") 
+```
+<a href='https://leovanciu.github.io/' class='btn btn-primary'>Back to Home</a>
+
+# Introduction
+
+This project consists of a comparison of execution time and memory use in Python and R for computational operations common in data science, namely generic loop and vectorized operations, matrix multiplication and inversion, and some popular computationally heavy statistical and ML algorithms.
+
+
+## Why R and Python
+
+R and Python are arguably the two most popular open-source programming language used in data science. Both are considered high-level programming languages with many abstractions built-in to feature simple syntax.
+
+Python is also widely outside for programming outside data science and ranks first in many popularity indices like the TIOBE index. Its popularity in data science may be explained by its extensive ecosystem of open-source libraries contributed by the programming community, such as NumPy, pandas, scikit-learn. These libraries provide flexible algorithms for data manipulation, analysis, and visualization. Python's ecosystem has many other libraries beyond data science, such as for web development and natural language processing, and it has extensive documentation on GitHub. Compared to R, Python is more popular in the data science industry and in the academic machine learning community. Python libraries are typically built in C/C++ or Fortran for efficient implementations.
+
+R is a programming language designed specifically for statistical computing and graphics. Like Python, R's main strength is its extensive collection of open-source packages contributed by the community of users, which mainly consists of statisticians and researchers. It features built-in functions for popular statistical algorithms like linear regression as well as flexible graphical capabilities. There are also many packages for complex data manipulation like the Tidyverse collection which includes dplyr and the high-quality visualization tool ggplot2. R's syntax is tailored for statistical analysis, using vectors as its data structure for storing and manipulating data. It includes many built-in reproducibility features like setting a seed for pseudo-random number generators. Its packages are also typically implemented in C or C++.
+
+
+Other popular high-level programming languages in data science include Java and relative newcomer Julia, and common proprietary programming languages include SAS, Stata, and MATLAB.
+
+# Setup
+
+This project contained three phases, which are representative of a typical data science project: 
+
+1) Simulating data;
+
+2) Writing and running various algorithms and recording execution time and memory usage;
+
+3) Analyzing and presenting the data.
+
+
+## Simulation
+
+I simulated a linear regression dataset in R with $n=10^6$ and $p=10$ as follows:
+\begin{align*}
+\beta_j &\overset{iid}{\sim} \mathrm{Unif}(0,10), \quad j=1,\dots, p \\
+x_{ij} &\overset{iid}{\sim} \mathcal{N}(0,1), \quad i=1, \dots,n \\
+y_i &\overset{indep.}{\sim} \mathcal{N}(100+\sum_{j=1}^{p} \beta_j x_{ij},1).
+\end{align*}
+The $y$ vector was used by the loop and bootstrap algorithms, and the full $(y,X)$ dataset was used by the linear regression and Markov chain Monte Carlo algorithms.
+
+I also generated a vector 
+\begin{align*}
+I_i &\overset{iid}{\sim} \mathrm{Bern}(1/2), \quad i=1, \dots, n\\
+f_i &= (-1)^{I_i}
+\end{align*}
+and the datset $(f, X)$ was used by the support vector machine algorithm.
+
+Two $1000\times 1000$ matrices were populated from a standard Normal distribution. These matrices were used in the matrix multiplication and inversion operations. The data $(y,X,f)$ was saved as a matrix in the file Data/data.csv, and the two matrices $A$ and $B$ were saved in the files Data/A.csv and Data/B.csv. The script used to generate the data is available in the repository https://github.com/leovanciu/cs32_final_project at Data/data.R, and the csv files for the matrices is available in the same repository while the data.csv file was too large to be uploaded to Github but the same data I used can be generated through the fixed seed set in the R file.
+
+The R code used to generate the data is very straightforward following probabilistic notation as follows.
+```{r, eval = FALSE}
+set.seed(32)
+# Generate linear regression data
+betas <- runif(10, -10, 10)
+
+X <- matrix(rnorm(1e6 * 10), ncol = 10)
+y <- 100 + X[,1:10] %*% betas + rnorm(1e6)
+f <- sample(c(-1, 1), 1e6, replace = TRUE)
+data <- cbind(y, X, f)
+write.csv(data, "Data/data.csv")
+
+# Generate matrix data
+A <- matrix(runif(1e6), ncol = 1e3)
+B <- matrix(runif(1e6), ncol = 1e3)
+write.csv(A, "Data/A.csv")
+write.csv(B, "Data/B.csv")
+```
+
+
+
+## Algorithms
+
+For each algorithm, I measure execution time and memory using the "benchmark" package in R and the "time" and "memory_profiler" libraries in Python. The measured time was total user time rather than processor time. The algorithms were meant to be written in a way that is as structurally similar as possible in both languages, but the implementations of base functions vary greatly between the two languages. Ultimately, this is what makes the comparison interesting since there can be great differences in execution time for similar operations, but it also means that an algorithm can be written in a poorly optimized way in a language and artificially seem much faster in the other. For instance, people often criticize the speed of loops in R and Python and my tests agree with this criticism, but these operations can almost always be made much faster by using vectorized operations.
+
+Memory turned out difficult to measure, and I relied on external packages. R and Python implement memory management in very different ways. For instance, R distinguishes between memory stored by vectors and by everything else. It appears that memory usage was too low to be recorded in R for several operations such as loops and was recorded as 0. This is a floating point problem that I was not able to solve despite trying many approaches, including the base R implementation of memory monitoring and several packages. The interpretation of memory usage is also murky, as detailed in the [Dicussion](#discussion) section.
+
+The following algorithms were tested: a sum loop, a geometric mean loop and a vectorized implementation, matrix multiplication and inversion, linear regression, the bootstrap, two Markov Chain Monte Carlo (MCMC) algorithms, and a support vector machine (SVM). When possible, I implemented a simple version of these algorithms using only base functions in the language as well as a popular package/library. For instance, for linear regression I use the lm() function in R and the Scikit-Learn library in Python as well as an algorithm using only matrix multiplication and inversion. Of course, these two matrix operations are themselves algorithms with many different possible implementations. I mainly use R in my everyday life so I am likely more familiar with the most optimized packages in R rather than Python.
+
+I varied the sample size when running the algorithms by selecting a subset of these datasets. I varied the sample size from $n=10^2$ to $n=10^6$ by magnitude of 10 for the loop and linear regression algorithms. I varied the size of the matrices from $n=10$ to $n=10^3$ by magnitude of $10^{1/2}$. I kept the sample size of the bootstrap and MCMC algorithms fixed at $n=10^3$ and varied the sampling/resampling size (see the precise definition of the algorithms in the [Results](#results) section) from $B=10$ to $10^5$ by magnitude of 10. For the SVM algorithm, I varied the sample size from $n=10$ to $n=10^3$ by magnitude of $10^{1/2}$. The sample sizes were chosen to represent the shift from the typical size of a statistical analysis around $n=100$ to the big data size of $n=10^6$ which approaches the limits of my machine for many algorithms. The sample size was varied at lower rates for some algorithms because execution time increased too rapidly for the bootstrap, Markov chain Monte Carlo algorithms, and the support vector machine.
+
+I ran scripts in R and Python on these simulated datasets for 10 iterations and for the varying sample sizes mentioned above, and I recorded the median execution time and memory use in CSV files in Results/results_R.csv and Results/results_python.csv. The scripts used to run the algorithms are available in the GitHub repository at Scripts/algorithms.py and Scripts/algorithms.R. 
+
+## Analysis
+
+I used R Markdown to generate this HTML webpage and used the plotly package to generate interactive plots of execution time and memory use for each algorithm. I also discuss theoretical Big-O complexity and fit an empirical curve to the plots based on the most simple version of these algorithms.
+
+## Reproducibility
+Details on reproducing the entire project can be found at https://github.com/leovanciu/cs32_final_project. The code for this Rmarkdown file can be downloaded by clicking on the code button at the top of this webpage or at https://github.com/leovanciu/leovanciu.github.io/blob/master/cs32-project.Rmd. All the scripts for simulating the data and running the scripts are available in the GitHub repository above, and all the code used to generate my website which was forked from mmistakes/minimal-mistakes is available in the Github repository https://github.com/leovanciu/leovanciu.github.io.
+
+I am using R version 4.3.1 with RStudio version 2023.09.0+463 and Python version 3.12.3 with Visual Studio code version 1.88.1. My computer is a MacBook Pro (13-inch, M1, 2020) with 8 GB of memory and running on macOS Monterey Version 12.2.1.
+
+# Results {#results} 
+
+## Data
+A histogram of the simulated data is plotted below. It has mean 100 and standard deviation 17. By construction, it is Normally distributed.
+
+```{r, message = FALSE, eval = TRUE}
+library(plotly)
+data <- read.csv("Data/data.csv")
+hist <- plot_ly(x = data[,2], type = "histogram") %>%
+  layout(title = "Simulated Data",
+         yaxis = list(title = "Frequency"),
+          xaxis = list(title = "y"))
+hist
+```
+
+
+
+## Loop operations
+
+For loops are ubiquitous programming structures in data science, and they are somewhat infamous in both R and Python, as they are believed to be much slower than in low-level languages like C.
+
+### Loop sums
+
+Here is pseudo code of a simple foreach loop to compute a sum.
+
+```plaintext
+Function loop_sum(n)
+    sum <- 0
+    For i from 1 to n
+        sum <- sum + i
+    End For
+    Return sum
+End Function
+```
+
+In terms of computational complexity, the initialization step is $O(1)$, a linear operation like a sum is also $O(1)$, and by definition the loop is $O(n)$ which is the overall complexity of the algorithm. 
+
+The following code shows the implementation in Python.
+```{python, eval = FALSE}
+def loop_sum(n):
+    sum = 0
+    for i in range(n):
+        sum += 1
+    return sum
+```
+
+The following code shows the implementation in R.
+
+```{r, eval = FALSE}
+loop_sum <- function(n) {
+  sum <- 0
+  for (i in 1:n) {
+    sum <- sum + 1
+  }
+  return(sum)
+}
+```
+
+
+Note that the syntax for writing functions is slightly different in R and Python. Both languages use foreach loops written similarly. R supports both <- and = as assignement operators. Historically, comes from the S language which also uses the <- assignment operator.
+
+
+I include below the code used to generate interactive plots of execution time and memory usage with the plotly library in R. Generating this plot required quite a bit of data manipulation, which was easily done in base R, and more complex operations can be done with simple syntax with the dplyr package, which I used when storing the results from the benchmarks. All other plots were generated with similar code hidden for readability.
+
+
+```{r,message=FALSE}
+library(plotly)
+# Read data
+R <- read.csv("/Users/ancavanciupopescu/Desktop/Classes/CS 32/Final project/Results/Results_R.csv")
+python <- read.csv("/Users/ancavanciupopescu/Desktop/Classes/CS 32/Final project/Results/Results_python.csv")
+merged_data <- merge(R, python, by=c("Algorithm", "n"), suffixes = c("R", "python"))
+algorithm_names <- c('loop_sum','loop_geom_mean', 'vectorized_geom_mean', 'matrix_multiplication', 
+                 'matrix_inversion', 'linear_regression_package', 'linear_regression_base', 
+                 'bootstrap_package', 'bootstrap_base', 'svm_package', 'svm_base', 
+                 'Metropolis_Hastings', 'MCMC_stan')
+
+# Compute Big-O complexity
+algos <- c("loop_sum") # We only plot one algorithm here but in other plots I have multiple algorithms
+n_values <- seq(2, 6, by = 0.1)
+O_n <- 10^n_values/10^4
+O_n_python_1 <- O_n*python[python$Algorithm == algos[1],]$Time[3] # The pre-factors are standardized on the empirical time with n=10^4
+O_n_R_1 <- O_n*R[R$Algorithm == algos[1],]$Time[3]
+
+# Time plot
+plot_ly() %>%
+  add_trace(data = R[R$Algorithm == algos[1],], x = ~log(n, 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'R',
+            line = list(color = "blue", dash = 'solid'),
+            marker = list(color = "blue", symbol = 'circle')) %>%
+  add_trace(data = python[python$Algorithm == algos[1],], x = ~log(n, 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'loop_sum Python',
+            line = list(color = "red", dash = 'solid'),
+            marker = list(color = "red", symbol = 'dot')) %>%
+  add_trace(x = n_values, y = O_n_python_1, type = 'scatter', mode = 'lines',
+            name = 'O(n)', line = list(color = 'black', dash = 'dash')) %>%
+  add_trace(x = n_values, y = O_n_R_1, type = 'scatter', mode = 'lines',
+            name = 'O(n)', line = list(color = 'black', dash = 'dash'), showlegend = FALSE) %>%
+  layout(title = "Execution Time",
+         xaxis = list(title = "log(n)", tickmode = "array", tickvals = 0:6, ticktext = as.character(0:6)),
+         yaxis = list(title = "Time (s)"),
+         legend = list(title = "Legend", orientation = "h", x = 0.3, y = -0.2))
+```
+
+
+```{r echo=FALSE}
+# Memory plot
+plot_ly() %>%
+  add_trace(data = R[R$Algorithm == algos[1],], x = ~log(n, 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'loop_sum R',
+            line = list(color = "blue", dash = 'solid'),
+            marker = list(color = "blue", symbol = 'circle')) %>%
+  add_trace(data = python[python$Algorithm == algos[1],], x = ~log(n, 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'loop_sum Python',
+            line = list(color = "red", dash = 'solid'),
+            marker = list(color = "red", symbol = 'dot')) %>%
+  layout(title = "Memory Usage",
+         xaxis = list(title = "log(n)", tickmode = "array", tickvals = 0:6, ticktext = as.character(0:6)),
+         yaxis = list(title = "Memory (MiB)"),
+         legend = list(title = "Legend", orientation = "h", x = 0.3, y = -0.2))
+```
+
+
+We see that loops in R run two to three times faster than in Pyton. We see that $O(n)$ fits the data perfectly. It seems that memory usage was too low to be recorded in R and there is no clear trend on the memory usage in Python, although it Python does use a strangely large amount of memory for such a simple for loop algorithm. This is a win for execution time for R, but it is well-known that loops are slow in both R and Python due to the many abstractions made by the programming languages. It is often suggested to vectorize operations, which can speed up loops considerably. 
+
+### Vectorized operations
+
+
+Vectorized operations are operations applied to every entry of an array. They are still loops, but they are typically compiled directly in C which is much faster than executing a loop in R or Python. The computational complexity is theoretically should still be the same as a loop since the same operations are performed, but the pre-factor is reduced. In addition, the operations can be optimized for the CPU to perform multiple operations on the data. Hence, due to more efficient memory allocation it is possible for the order of execution time to be reduced as well. In the following plots, I compare the computation of the geometric mean computed as $$\exp\left(\frac{1}{n} \sum_{i=1}^n \log y_i\right)$$ through a loop and with a vectorized operation.
+
+R has a distinct vector object type, while in Python they are simply one-dimensional arrays. This is implemented in Python through libraries such as numpy and natively in R although there are also several packages implementing efficient vectorized operations. Here is the code in Python:
+```{python, eval = FALSE}
+def vectorized_geom_mean(data):
+    return np.exp(np.sum(np.log(data)) / len(data))
+```
+
+and in R:
+
+```{r, eval = FALSE}
+vectorized_geom_mean <- function(data) {
+  return(exp(mean(log(data))))
+}
+```
+
+
+Here are plots showing execution time and memory for plots and vectorized operations in R and Python.
+
+
+```{r echo=FALSE}
+algos <- c("loop_geom_mean", "vectorized_geom_mean")
+plot_ly() %>%
+  add_trace(data = R[R$Algorithm == algos[1],], x = ~log(n, 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'loop_geom_mean R',
+            line = list(color = "blue", dash = 'solid'),
+            marker = list(color = "blue", symbol = 'circle')) %>%
+  add_trace(data = R[R$Algorithm == algos[2],], x = ~log(n, 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'vectorized_geom_mean R',
+            line = list(color = "blue", dash = 'dashdot'),
+            marker = list(color = "blue", symbol = 'square')) %>%
+  add_trace(data = python[python$Algorithm == algos[1],], x = ~log(n, 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'loop_geom_mean Python',
+            line = list(color = "red", dash = 'solid'),
+            marker = list(color = "red", symbol = 'dot')) %>%
+  add_trace(data = python[python$Algorithm == algos[2],], x = ~log(n, 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'vectorized_geom_mean Python',
+            line = list(color = "red", dash = 'dashdot'),
+            marker = list(color = "red", symbol = 'square')) %>%
+  layout(title = "Execution Time",
+         xaxis = list(title = "log(n)", tickmode = "array", tickvals = 0:6, ticktext = as.character(0:6)),
+         yaxis = list(title = "Time (s)"),
+         legend = list(title = "Legend", orientation = "h", x = 0.3, y = -0.2))
+
+plot_ly() %>%
+  add_trace(data = R[R$Algorithm == algos[1],], x = ~log(n, 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'loop_geom_mean R',
+            line = list(color = "blue", dash = 'solid'),
+            marker = list(color = "blue", symbol = 'circle')) %>%
+  add_trace(data = R[R$Algorithm == algos[2],], x = ~log(n, 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'vectorized_geom_mean R',
+            line = list(color = "blue", dash = 'dashdot'),
+            marker = list(color = "blue", symbol = 'square')) %>%
+  add_trace(data = python[python$Algorithm == algos[1],], x = ~log(n, 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'loop_geom_mean Python',
+            line = list(color = "red", dash = 'solid'),
+            marker = list(color = "red", symbol = 'dot')) %>%
+  add_trace(data = python[python$Algorithm == algos[2],], x = ~log(n, 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'vectorized_geom_mean Python',
+            line = list(color = "red", dash = 'dashdot'),
+            marker = list(color = "red", symbol = 'square')) %>%
+  layout(title = "Memory usage",
+         xaxis = list(title = "log(n)", tickmode = "array", tickvals = 0:6, ticktext = as.character(0:6)),
+         yaxis = list(title = "Memory (MiB)"),
+         legend = list(title = "Legend", orientation = "h", x = 0.3, y = -0.2))
+```
+
+
+We see that loops in Python and R are very slow compared to the vectorized operation. Although the pre-factor is much smaller for vectorized operations, the computational complexity is still $O(n)$, as can be seen by fitting a linear curve to the plot of vectorized operations below.
+
+
+
+```{r, echo=FALSE}
+algos <- c("vectorized_geom_mean")
+n_values <- seq(2, 6, by = 0.1)
+O_n <- 10^n_values/10^4
+O_n_python_1 <- O_n*python[python$Algorithm == algos[1],]$Time[3]
+O_n_R_1 <- O_n*R[R$Algorithm == algos[1],]$Time[3]
+plot_ly() %>%
+  add_trace(data = R[R$Algorithm == algos[1],], x = ~log(n, 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'vectorized_geom_mean Python',
+            line = list(color = "blue", dash = 'dashdot'),
+            marker = list(color = "blue", symbol = 'square')) %>%
+  add_trace(data = python[python$Algorithm == algos[1],], x = ~log(n, 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'vectorized_geom_mean Python',
+            line = list(color = "red", dash = 'dashdot'),
+            marker = list(color = "red", symbol = 'square')) %>%
+  add_trace(x = n_values, y = O_n_R_1, type = 'scatter', mode = 'lines',
+            name = 'O(n)', line = list(color = 'black', dash = 'dash')) %>%
+  layout(title = "Execution Time",
+         xaxis = list(title = "log(n)", tickmode = "array", tickvals = 0:6, ticktext = as.character(0:6)),
+         yaxis = list(title = "Time (s)"),
+         legend = list(title = "Legend", orientation = "h", x = 0.3, y = -0.2))
+```
+
+
+
+
+## Matrix operations
+
+
+Matrix operations, namely addition, subtraction, multiplication, inversion, and dot products are central to statistics particularly for multivariate data. For instance, linear regression can be framed entirely as an algorithm involving only matrix multiplication and inversion. Here, I test the implementation of matrix multiplication and inversion in Python and R. This is a one-liner in both languages, but the actual algorithms for matrix multiplication and inversion are actually quite computationally costly.
+
+For matrix multiplication, the mathematical definition gives the following algorithm.
+
+```plaintext
+Function mutiply_matrices(A, B)
+    // Dimensions
+    m <- number of rows in A
+    n <- number of columns in A
+    p <- number of columns in B
+    C <- Initialize with zeros
+    
+    For i from 1 to m
+        For j from 1 to p
+            sum <- 0
+            For k from 1 to n
+                sum <- sum + A[i][k] * B[k][j]
+            EndFor
+            C[i][j] <- sum
+        EndFor
+    EndFor
+    
+    Return C
+End Function
+```
+
+For each pair of $m$ row from $A$ and $p$ column from $B$, $n$ multiplications are performed through three nested loops. For each of the $n$ multiplications, there is a sum which has complexity $O(1)$. This gives computational complexity $\mathcal{O}(mnp)$ and in the case where $m=n=p$ this is $O(n^3)$. However, Python and R likely have a more efficient version through some clever algorithm. 
+
+
+Here is basic pseudocode for the Gauss-Jordan algorithm for matrix inversion.
+```plaintext
+Function invert_matrix(A)
+    // Dimensions
+    n <- number of rows in A
+    B <- Initialize matrix B as an identity matrix
+    
+    // Perform Gaussian elimination
+    For i from 1 to n
+        divisor <- A[i][i]
+        For j from 1 to n
+            A[i][j] <- A[i][j] / divisor
+            B[i][j] <- B[i][j] / divisor
+        EndFor
+        
+        // Set other elements in column i of A to 0
+        For k from 1 to n
+            If k != i
+                factor <- A[k][i]
+                For j from 1 to n
+                    A[k][j] <- A[k][j] - factor * A[i][j]
+                    B[k][j] <- B[k][j] - factor * B[i][j]
+                EndFor
+            EndIf
+        EndFor
+    EndFor
+    
+    Return B
+End Function
+```
+
+Likewise to matrix multiplication, there are three nested loops which gives complexity $\mathcal{O}(n^3)$. 
+
+In Python this is simply implemented as follows.
+```{python, eval = FALSE}
+def multiply_matrices(A, B):
+    return A @ B
+
+def invert_matrix(A):
+    return np.linalg.inv(A)
+```
+
+Likewise in R this is simply implemented as follows. Sidenote: I really do not like the syntax %*% for matrix multiplication in R.
+
+```{r, eval = FALSE}
+multiply_matrices <- function(A, B) {
+  return(A %*% B)
+}
+
+invert_matrix <- function(A) {
+  return(solve(A))
+}
+```
+
+
+```{r echo=FALSE}
+algos <- c("matrix_multiplication", "matrix_inversion")
+n_values <- seq(1, 3, by = 0.1)
+O_n <- 10^n_values/10^2
+O_n3 <- (10^n_values/10^2)^3
+O_n_python_1 <- O_n*python[python$Algorithm == algos[1],]$Time[3]
+O_n3_R_1 <- O_n3*R[R$Algorithm == algos[1],]$Time[3]
+O_n_python_2 <- O_n*python[python$Algorithm == algos[2],]$Time[3]
+O_n3_R_2 <- O_n3*R[R$Algorithm == algos[2],]$Time[3]
+plot_ly() %>%
+  add_trace(data = R[R$Algorithm == algos[1],], x = ~log(sqrt(n), 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'matrix_multiplication R',
+            line = list(color = "blue", dash = 'solid'),
+            marker = list(color = "blue", symbol = 'circle')) %>%
+  add_trace(data = R[R$Algorithm == algos[2],], x = ~log(sqrt(n), 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'matrix_inversion R',
+            line = list(color = "blue", dash = 'dashdot'),
+            marker = list(color = "blue", symbol = 'square')) %>%
+  add_trace(data = python[python$Algorithm == algos[1],], x = ~log(sqrt(n), 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'matrix_multiplication Python',
+            line = list(color = "red", dash = 'solid'),
+            marker = list(color = "red", symbol = 'dot')) %>%
+  add_trace(data = python[python$Algorithm == algos[2],], x = ~log(sqrt(n), 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'matrix_inversion Python',
+            line = list(color = "red", dash = 'dashdot'),
+            marker = list(color = "red", symbol = 'square')) %>%
+  add_trace(x = n_values, y = O_n_python_1, type = 'scatter', mode = 'lines',
+            name = 'O(n)', line = list(color = 'black', dash = 'dash')) %>%
+  add_trace(x = n_values, y = O_n3_R_2, type = 'scatter', mode = 'lines',
+            name = 'O(n^3)', line = list(color = 'green', dash = 'dash')) %>%
+  layout(title = "Execution Time",
+         xaxis = list(title = "log(n)", tickmode = "array", tickvals = 0:6, ticktext = as.character(0:6)),
+         yaxis = list(title = "Time (s)"),
+         legend = list(title = "Legend", orientation = "h", x = 0.3, y = -0.2))
+plot_ly() %>%
+  add_trace(data = R[R$Algorithm == algos[1],], x = ~log(sqrt(n), 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'matrix_multiplication R',
+            line = list(color = "blue", dash = 'solid'),
+            marker = list(color = "blue", symbol = 'circle')) %>%
+  add_trace(data = R[R$Algorithm == algos[2],], x = ~log(sqrt(n), 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'matrix_inversion R',
+            line = list(color = "blue", dash = 'dashdot'),
+            marker = list(color = "blue", symbol = 'square')) %>%
+  add_trace(data = python[python$Algorithm == algos[1],], x = ~log(sqrt(n), 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'matrix_multiplication Python',
+            line = list(color = "red", dash = 'solid'),
+            marker = list(color = "red", symbol = 'dot')) %>%
+  add_trace(data = python[python$Algorithm == algos[2],], x = ~log(sqrt(n), 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'matrix_inversion Python',
+            line = list(color = "red", dash = 'dashdot'),
+            marker = list(color = "red", symbol = 'square')) %>%
+  layout(title = "Memory usage",
+         xaxis = list(title = "log(n)", tickmode = "array", tickvals = 0:6, ticktext = as.character(0:6)),
+         yaxis = list(title = "Memory (MiB)"),
+         legend = list(title = "Legend", orientation = "h", x = 0.3, y = -0.2))
+```
+
+
+Interestingly, the implementation of matrix multiplication and inversion in Python seems to scale linearly or even better with $n$, but it blows up to order $O(n^3)$ for R for larger matrices. For smaller matrices of size less than $100 \times 100$, R seems to be faster while Python is much faster for large $n=1000$. An important note is that memory also seems to increase linearly for larger matrices in Python which may also explain why the execution time is much better than the theoretical complexity.
+
+
+## Linear regression
+
+The ordinary least squares estimate of linear regression $\hat{\beta}$ for $\beta$ is the vector that solves the contrainst $$\arg \min_\beta (y - X \beta^T)^2.$$ If the data is Normally distributed as in the [simulation](#setup), then it is well-known that $\hat{\beta}$ is given by 
+$$\hat{\beta} = (X^T X)^{-1} X^T y.$$
+Therefore, OLS consists simply of matrix multiplication and inversion. In pseudocode, it can be implemented in the following manner.
+
+
+```plaintext
+Function linear_regression(X, y)
+    // Dimensions
+    n <- length of data y
+    p <- number of columns in X
+    X_b <- Append column 1 to X // Include an intercept
+    
+    // Compute coefficients
+    beta_hat <- (X_b.T @ X_b)^-1 @ (X_b.T @ y) 
+    
+    Return beta_hat
+End Function
+```
+
+The matrix augmentation operation is $O(n)$ since we are appending $n$ rows. The matrix multiplication and inversion are the dominating steps of this algorithm. As explained in the previous section on matrices, the matrix multiplication X_b.T @ X_b step is $O(n \times (p+1)^2)$ while the matrix inversion is $O((p+1)^3)$, although these matrix operations are likely implemented more efficiently in Python and R. The last step of multiplying the matrix (X_b.T @ X_b)^-1 with the vector (X_b.T @ y) is $O((p+1)^2)$. Therefore, the overall complexity is $O(p^3)$ or $O(n \times (p+1)^2)$ depending on whether $p<<n$. We can never have $p>n$ in linear regression since the coefficients would become unidentifiable. In this case since we keep $p=10$ and we increase $n$ to $n=10^6$, the dominating step is the first matrix multiplication step which is $O(n)$. This setup is typical of classical regression where a relatively small number of covariates is used, but in a high-dimensional setting we could have large $p$ which would make the matrix inversion step more costly.
+
+In Python this can be implemented like the algorithm above or using the Scikit-Learn package:
+```{python, eval = FALSE}
+# Linear regression from base
+def lin_reg_base(X, y):
+    X_b = np.hstack([np.ones((X.shape[0], 1)), X])
+    beta_hat = np.linalg.inv(X_b.T @ X_b) @ (X_b.T @ y)
+    return beta_hat
+  
+# sklearn-Learn linear regression
+def lin_reg_sklearn(X, y):
+    model = LinearRegression()
+    model.fit(X, y)
+    beta_hat = np.hstack([model.intercept_, model.coef_])
+    return beta_hat
+```
+
+and in R this is also implemented in Base R using the lm() function:
+
+```{r, eval = FALSE}
+# Linear regression from base
+lin_reg_base <- function(X, y) {
+  Xb <- cbind(1, X)
+  betas <- solve(t(Xb) %*% Xb) %*% (t(Xb) %*% y)
+  return(betas)
+}
+
+# Linear regression using lm()
+lin_reg_package <- function(X, y) {
+  model <- lm(y ~ X + 0)
+  return(coef(model))
+}
+```
+
+
+
+```{r echo=FALSE}
+algos <- c("linear_regression_base", "linear_regression_package")
+n_values <- seq(2, 6, by = 0.1)
+O_n <- 10^n_values/10^4
+O_n_python_1 <- O_n*python[python$Algorithm == algos[1],]$Time[3]
+O_n_R_1 <- O_n*R[R$Algorithm == algos[1],]$Time[3]
+O_n_python_2 <- O_n*python[python$Algorithm == algos[2],]$Time[3]
+O_n_R_2 <- O_n*R[R$Algorithm == algos[2],]$Time[3]
+plot_ly() %>%
+  add_trace(data = R[R$Algorithm == algos[1],], x = ~log(n, 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'linear_regression_scratch R',
+            line = list(color = "blue", dash = 'solid'),
+            marker = list(color = "blue", symbol = 'circle')) %>%
+  add_trace(data = R[R$Algorithm == algos[2],], x = ~log(n, 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'linear_regression_base R',
+            line = list(color = "blue", dash = 'dashdot'),
+            marker = list(color = "blue", symbol = 'square')) %>%
+  add_trace(data = python[python$Algorithm == algos[1],], x = ~log(n, 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'linear_regression_scratch Python',
+            line = list(color = "red", dash = 'solid'),
+            marker = list(color = "red", symbol = 'dot')) %>%
+  add_trace(data = python[python$Algorithm == algos[2],], x = ~log(n, 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'linear_regression_sklearn Python',
+            line = list(color = "red", dash = 'dashdot'),
+            marker = list(color = "red", symbol = 'square')) %>%
+  add_trace(x = n_values, y = O_n_R_1, type = 'scatter', mode = 'lines',
+            name = 'O(n)', line = list(color = 'black', dash = 'dash')) %>%
+  layout(title = "Execution Time",
+         xaxis = list(title = "log(n)", tickmode = "array", tickvals = 0:6, ticktext = as.character(0:6)),
+         yaxis = list(title = "Time (s)"),
+         legend = list(title = "Legend", orientation = "h", x = 0.3, y = -0.2))
+n_values <- seq(2, 6, by = 0.1)
+O_n <- 10^n_values/10^4
+O_n_python_1 <- O_n*python[python$Algorithm == algos[1],]$Memory[3]
+O_n_R_1 <- O_n*R[R$Algorithm == algos[1],]$Memory[3]
+O_n_python_2 <- O_n*python[python$Algorithm == algos[2],]$Memory[3]
+O_n_R_2 <- O_n*R[R$Algorithm == algos[2],]$Memory[3]
+plot_ly() %>%
+  add_trace(data = R[R$Algorithm == algos[1],], x = ~log(n, 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'linear_regression_scratch R',
+            line = list(color = "blue", dash = 'solid'),
+            marker = list(color = "blue", symbol = 'circle')) %>%
+  add_trace(data = R[R$Algorithm == algos[2],], x = ~log(n, 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'linear_regression_base R',
+            line = list(color = "blue", dash = 'dashdot'),
+            marker = list(color = "blue", symbol = 'square')) %>%
+  add_trace(data = python[python$Algorithm == algos[1],], x = ~log(n, 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'linear_regression_scratch Python',
+            line = list(color = "red", dash = 'solid'),
+            marker = list(color = "red", symbol = 'dot')) %>%
+  add_trace(data = python[python$Algorithm == algos[2],], x = ~log(n, 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'linear_regression_sklearn Python',
+            line = list(color = "red", dash = 'dashdot'),
+            marker = list(color = "red", symbol = 'square')) %>%
+  add_trace(x = n_values, y = O_n_R_2, type = 'scatter', mode = 'lines',
+            name = 'O(n)', line = list(color = 'black', dash = 'dash')) %>%
+  layout(title = "Memory usage",
+         xaxis = list(title = "log(n)", tickmode = "array", tickvals = 0:6, ticktext = as.character(0:6)),
+         yaxis = list(title = "Memory (MiB)"),
+         legend = list(title = "Legend", orientation = "h", x = 0.3, y = -0.2))
+```
+
+
+Linear regression seems to scale linearly for execution time in R, but execution time seems constant and even perplexingly decreases for large $n$ in Python. The implementation from scratch in both Python and R was faster than the implementation from sklearn in Python and from the base function in R, and R was faster for data sets less than $n=10^5$ while Python scaled better for large $n=10^6$. The execution time of linear regression from sklearn blows up at $10^6$ and is considerably slower than all other implementations. This makes sense since scikit-learn and lm() contain additional steps than my simple code, such as translating the formula syntax into matrix calculations and many other options for more complicated versions of linear regression, although I am not sure why it scales so poorly for large $n$. Interestingly, memory scaled roughly linearly and all algorithms in both R and Python had similar memory curves, which may explain why execution time did not seem to increase in the basic implemention in Python.
+
+## Bootstrap
+
+The bootstrap algorithm is popular in statistics because it allows for the estimation of the properties of general estimators under minimal assumptions even if they are not analytically tractable. The idea of the bootstrap is to resample from the data to create new synthethic datasets and compute a new estimator for each dataset, from which the sampling distribution of the estimator can be estimated. The bootstrap was influential in moving statistics away from mathematics and towards computation since one does not need to know anything about the distribution of the estimator to perform the algorithm. The major assumptions of the standard bootstrap are that the data are independent and identically distributed and that the empirical cumulative density function (CDF) is close to the true CDF of the data. The latter is asymptotically justified but empirically untestable.
+
+Here is a pseudocode for the bootstrap algorithm.
+
+```plaintext
+Function bootstrap(data, statistic, B, alpha)
+    n <- length of data
+    idx <- sample B sets of indices with replacement 
+    samples <- extract data elements based on idx
+    stat <- sort(statistic(samples))
+    lower_CI <- extract (100*(1-alpha)/2)th sample
+    upper_CI <- extract (100*(1-(1-alpha)/2)th sample
+    Return lower_CI, upper_CI
+End Function
+```
+
+The idx resampling step is $O(n \times B)$ and extracting the samples is also $O(n \times B)$. For a linear statistic like a sample mean, the statistic step is also $O(n \times B)$. The sorting step depends on the algorithm used, but the one used in Python is Timsort which has $O(B \log (B))$. After that, computing the two sample quantiles on the sorted data is $O(1)$. However, a potentially more efficient way of doing this step is using sample quantiles since we are only interested in two sample quantiles which may avoid sorting the entire dataset. Therefore, since we increase $B$ and keep $n=10^3$ fixed, the dominating step is likely the resampling/extracting/statistic step, which has complexity $O(B)$, although if we use a naive sorting algorithm like bubble sort this may become costly. There are other more complicated implementations of the bootstrap that do not use sample quantiles for the confidence interval. A popular approach is to use a bootstrapped pivot within each iteration of the algorithm, thereby nesting an additional loop in the algorithm which increases the complexity to $O(B^2)$.
+
+
+In Python the standard bootstrap can be implemented using the algorithm above with vectorized operations for efficiency, or using the scipy.stats library as follows.
+
+```{python, eval = FALSE}
+# Bootstrap from base
+def bootstrap_base(data, statistic, B):
+    n = len(data)
+    idx = np.random.randint(0, n, (B, n))
+    samples = data[idx]
+    stat = statistic(samples)
+    confidence_interval = np.quantile(stat, [0.025, 0.975])
+    return confidence_interval
+  
+# scipy.stats bootstrap
+def bootstrap_scipy(data, statistic, B, confidence_level=0.95):
+    res = stats.bootstrap((data,), statistic, n_resamples=B, confidence_level=confidence_level, method='percentile')
+    return res.confidence_interval
+  
+def sample_mean(data):
+    return sum(data)/len(data)
+```
+
+In R this can also be implemented using a vectorized version or using the boot package.
+
+```{r, eval = FALSE}
+# Bootstrap from base
+bootstrap_base <- function(data, statistic, B) {
+  n <- length(data)
+  results <- replicate(B, statistic(sample(data, size = length(data), replace = TRUE)))
+  ci <- quantile(results, probs = c(0.025, 0.975))
+  return(ci)
+}
+mean_function <- function(data) {
+  mean(data)
+}
+
+# Bootstrap from boot
+bootstrap_package <- function(data, statistic, R) {
+  result <- boot(data, statistic = statistic, R = R)
+  ci <- boot.ci(result, type = "perc")$percent[4:5]
+  return(ci)
+}
+
+mean_boot <- function(data, indices) {
+  mean(data[indices])
+}
+```
+
+
+
+```{r echo=FALSE}
+algos <- c("bootstrap_base", "bootstrap_package")
+n_values <- seq(1, 5, by = 0.1)
+O_n <- 10^n_values/10^3
+O_n_python_1 <- O_n*python[python$Algorithm == algos[1],]$Time[3]
+O_n_R_1 <- O_n*R[R$Algorithm == algos[1],]$Time[3]
+O_n_python_2 <- O_n*python[python$Algorithm == algos[2],]$Time[3]
+O_n_R_2 <- O_n*R[R$Algorithm == algos[2],]$Time[3]
+plot_ly() %>%
+  add_trace(data = R[R$Algorithm == algos[1],], x = ~log(n/10, 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'bootstrap_scratch R',
+            line = list(color = "blue", dash = 'solid'),
+            marker = list(color = "blue", symbol = 'circle')) %>%
+  add_trace(data = R[R$Algorithm == algos[2],], x = ~log(n/10, 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'bootstrap_boot R',
+            line = list(color = "blue", dash = 'dashdot'),
+            marker = list(color = "blue", symbol = 'square')) %>%
+  add_trace(data = python[python$Algorithm == algos[1],], x = ~log(n/10, 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'bootstrap_scratch Python',
+            line = list(color = "red", dash = 'solid'),
+            marker = list(color = "red", symbol = 'dot')) %>%
+  add_trace(data = python[python$Algorithm == algos[2],], x = ~log(n/10, 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'bootstrap_scipy Python',
+            line = list(color = "red", dash = 'dashdot'),
+            marker = list(color = "red", symbol = 'square')) %>%
+  add_trace(x = n_values, y = O_n_R_1, type = 'scatter', mode = 'lines',
+            name = 'O(n)', line = list(color = 'black', dash = 'dash')) %>%
+  layout(title = "Execution Time",
+         xaxis = list(title = "log(B)", tickmode = "array", tickvals = 0:6, ticktext = as.character(0:6)),
+         yaxis = list(title = "Time (s)"),
+         legend = list(title = "Legend", orientation = "h", x = 0.3, y = -0.2))
+O_n <- 10^n_values/10^3
+O_n_python_1 <- O_n*python[python$Algorithm == algos[1],]$Memory[3]
+O_n_R_1 <- O_n*R[R$Algorithm == algos[1],]$Memory[3]
+O_n_python_2 <- O_n*python[python$Algorithm == algos[2],]$Memory[3]
+O_n_R_2 <- O_n*R[R$Algorithm == algos[2],]$Memory[3]
+plot_ly() %>%
+  add_trace(data = R[R$Algorithm == algos[1],], x = ~log(n/10, 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'bootstrap_scratch R',
+            line = list(color = "blue", dash = 'solid'),
+            marker = list(color = "blue", symbol = 'circle')) %>%
+  add_trace(data = R[R$Algorithm == algos[2],], x = ~log(n/10, 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'bootstrap_boot R',
+            line = list(color = "blue", dash = 'dashdot'),
+            marker = list(color = "blue", symbol = 'square')) %>%
+  add_trace(data = python[python$Algorithm == algos[1],], x = ~log(n/10, 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'bootstrap_scratch Python',
+            line = list(color = "red", dash = 'solid'),
+            marker = list(color = "red", symbol = 'dot')) %>%
+  add_trace(data = python[python$Algorithm == algos[2],], x = ~log(n/10, 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'bootstrap_scipy Python',
+            line = list(color = "red", dash = 'dashdot'),
+            marker = list(color = "red", symbol = 'square')) %>%
+  layout(title = "Memory usage",
+         xaxis = list(title = "log(B)", tickmode = "array", tickvals = 0:6, ticktext = as.character(0:6)),
+         yaxis = list(title = "Memory (MiB)"),
+         legend = list(title = "Legend", orientation = "h", x = 0.3, y = -0.2))
+```
+
+
+In the plots above, we see that the execution time for both the package and base implementations of the bootstrap in Python blow up for large $B=10^5$. Since the plots are interactive, I encourage you to remove the Python data points by cliking on them in the legend. Then we can see that the implementations in R scale linearly as expected from the theoretical complexity. We also see that memory increases extremely fast in both R and Python, reaching 4GB for $B=10^5$ in Python and 2GB in R. Running $10^5$ iterations is likely overkill in practice, particularly for a sample mean which has rapid convergence by the law of large numbers. In general, the Monte Carlo error for a simple estimator often becomes much smaller then the sampling variance above $10^3$ or $10^4$ iterations.
+
+
+## MCMC
+
+
+Markov chain Monte Carlo algorithms (MCMC) are central methods to Bayesian statistics since they allow us to estimate the posterior distribution of parameters with general priors and likelihoods. Bayes theorem shows how to obtain a posterior distribution by multiplying the prior with the likelihood and dividing by the marginal distribution which involves taking an integral. In a few cases like the Normal distribution, the posterior distribution is of the same family as the prior and a closed form is available. However, for arbitrary priors and likelihoods this integral is typically very difficult or intractable, and numerical methods for computing integrals on a grid suffer from the curse of dimensionality. MCMC algorithms such as the Metropolis-Hastings algorithm approximates the posterior distribution by iteratively generating samples from a proposal distribution and computing an acceptance ratio that allows the sample to approach the posterior distribution. The acceptance ratio depends only on the current and previous sample, and it avoids having to compute the normalization constant since it cancels out in the ratio. A simple proposal function uses the Gaussian distribution at the current point, while more other MCMC algorithms like Hamiltonian Monte Carlo use more complicated proposal distributions by leveraging Hamiltonian dynamics. MCMC algorithms are well justified theoretically, and unlike the bootstrap it is possible to assess the convergence of the algorithm by running multiple chains and examining whether the chains converge to the same distribution, although I do not consider this here.
+
+Here is a simple pseudocode implementation of the Metropolis Hastings algorithm for the same linear regression setting as before. Linear regression is actually conjugate with Normal distributions which I use here for simplicity, so Metropolis-Hastings or even any approximation is not strictly necessary in this setting.
+
+```plaintext
+Function metropolis_hastings(X, y, B, beta_0, proposal_sd, sigma)
+    // Include an intercept
+    X_b <- Append column 1 to X
+    
+    // Initialize parameters
+    current_beta <- beta_0
+    samples <- current_beta
+    Xb <- X_b dot current_beta
+    current_likelihood <- sum(log(N(y|Xb,sigma))
+    current_prior <- sum(log(N(current_beta|mu0,sigma0)))
+    
+    // Sampling
+    For i from 1 to B
+        // Proposal
+        proposed_beta <- sample N(current_beta,proposal_sd)
+        Xb_proposed <- X_b dot proposed_beta
+        proposed_likelihood <- sum(log(N(y|Xb_proposed,sigma))
+        proposed_prior <- sum(log(N(proposed_beta|mu0,sigma0)))
+        
+        // Accept/reject new beta
+        p_accept <- exp(proposed_likelihood + proposed_prior - current_likelihood - current_prior)
+        U <- sample Unif(0,1)
+        If U < p_accept
+            current_beta <- proposed_beta
+            current_likelihood <- proposed_likelihood
+            current_prior <- proposed_prior
+        
+        Append current_beta to samples
+    
+    Return samples
+End Function
+```
+
+
+Augmenting the matrix is $O(n)$, the matrix dot products from linear regression is $O(n \times p)$, computing the log-likelihood is $O(n)$ and computing the prior is $O(p)$. Therefore, running the loop for B iterations has complexity $O(n \times p \times B)$, or keeping all else fixed it is $O(B)$. This seems great since we seem to have avoided curse of dimensionality, but it hides the important fact that this algorithm must be run until it converges to the posterior distribution. This is actually highly dependent on dimension because the random walk will need to run much longer in high dimensions to explore the entire space of the posterior distribution. Some algorithms like Hamiltonian Monte Carlo implemented in Stan in both R and Python help address this issue though more complicated proposal functions that reduce the autocorrelation between proposals.
+
+The Metropolis-Hastings algorithm can be implemented in Python as follows.
+
+```{python, eval = FALSE}
+# Metropolis_hastings from scratch
+def metropolis_hastings(X, y, num_samples, beta_0=np.zeros(11), proposal_sd=1, sigma=1):
+    X = np.hstack([np.ones((X.shape[0], 1)), X])
+    current_beta = beta_0
+    samples = [current_beta]
+    
+    Xb = X.dot(current_beta)
+    current_likelihood = np.sum(stats.norm.logpdf(y, Xb, sigma))
+    current_prior = np.sum(stats.norm.logpdf(current_beta, 0, 10))
+
+    for i in range(num_samples):
+        proposed_beta = np.random.normal(current_beta, proposal_sd)
+        Xb_proposed = X.dot(proposed_beta)
+        proposed_likelihood = np.sum(stats.norm.logpdf(y, Xb_proposed, sigma))
+        proposed_prior = np.sum(stats.norm.logpdf(proposed_beta, 0, 10))
+        
+        p_accept = np.exp((proposed_likelihood + proposed_prior) - (current_likelihood + current_prior))
+        
+        if np.random.rand() < p_accept:
+            current_beta = proposed_beta
+            current_likelihood = proposed_likelihood
+            current_prior = proposed_prior
+        
+        samples.append(current_beta)
+    
+    return np.array(samples)
+```
+
+The Metropolis-Hastings algorithm can be implemented in a similar form in R as follows. 
+
+```{r, eval = FALSE}
+# Metropolis_hastings for linear regression from base R
+metropolis_hastings <- function(X, y, num_samples, beta_0 = rep(0,11), proposal_sd=1, sigma=1) {
+  X <- cbind(1, X)
+  current_beta <- beta_0
+  samples <- list(current_beta)
+    
+  Xb <- X %*% current_beta
+  current_likelihood <- sum(dnorm(y, Xb, sigma, log = TRUE))
+  current_prior <- sum(dnorm(current_beta, 0, 10, log = TRUE))
+  
+  for (i in 1:num_samples) {
+    proposed_beta <- mvrnorm(1, current_beta, diag(rep(proposal_sd, length(beta_0))))
+    Xb_proposed <- X %*% proposed_beta
+    proposed_likelihood <- sum(dnorm(y, Xb_proposed, sigma, log = TRUE))
+    proposed_prior <- sum(dnorm(proposed_beta, 0, 10, log = TRUE))
+    
+    p_accept <- exp((proposed_likelihood + proposed_prior) - (current_likelihood + current_prior))
+    
+    if (runif(1) < p_accept) {
+      current_beta <- proposed_beta
+      current_likelihood <- proposed_likelihood
+      current_prior <- proposed_prior
+    }
+    
+    samples[[i + 1]] <- current_beta
+  }
+  
+  
+  return(do.call(rbind, samples))
+}
+```
+
+
+Both R and Python also support interfaces for the Stan programming language using cmdstanpy in Python and Rstan in R. Stan performs efficient Hamiltonian Monte Carlo with a No-U-Turn sampler. The notation in Stan is probabilistic which is convenient for statistical model building, and the computations are compiled efficiently in C++. Here is an example of a non-conjugate implementation of linear regression with a Cauchy prior on the standard deviation.
+
+```{stan output.var="model", eval = FALSE}
+data {
+int N; // Sample size
+int K; // Number of predictors
+matrix[N, K] X; // Covariates
+vector[N] y; // Outcome
+}
+parameters {
+vector[K] beta;
+real sigma;
+}
+
+model {
+// Priors
+beta ~ normal(0, 10);
+sigma ~ cauchy(0, 5);
+
+// Likelihood
+y ~ normal(X * beta , sigma);
+}
+```
+
+
+
+```{r echo=FALSE}
+algos <- c("Metropolis_Hastings", "MCMC_stan")
+n_values <- seq(1, 5, by = 0.1)
+O_n <- 10^n_values/10^3
+O_n_python_1 <- O_n*python[python$Algorithm == algos[1],]$Time[3]
+O_n_R_1 <- O_n*R[R$Algorithm == algos[1],]$Time[3]
+O_n_python_2 <- O_n*python[python$Algorithm == algos[2],]$Time[3]
+O_n_R_2 <- O_n*R[R$Algorithm == algos[2],]$Time[3]
+plot_ly() %>%
+  add_trace(data = R[R$Algorithm == algos[1],], x = ~log(n/10, 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'Metropolis_Hastings R',
+            line = list(color = "blue", dash = 'solid'),
+            marker = list(color = "blue", symbol = 'circle')) %>%
+  add_trace(data = R[R$Algorithm == algos[2],], x = ~log(n/10, 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'MCMC_stan R',
+            line = list(color = "blue", dash = 'dashdot'),
+            marker = list(color = "blue", symbol = 'square')) %>%
+  add_trace(data = python[python$Algorithm == algos[1],], x = ~log(n/10, 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'Metropolis_Hastings Python',
+            line = list(color = "red", dash = 'solid'),
+            marker = list(color = "red", symbol = 'dot')) %>%
+  add_trace(data = python[python$Algorithm == algos[2],], x = ~log(n/10, 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'MCMC_stan Python',
+            line = list(color = "red", dash = 'dashdot'),
+            marker = list(color = "red", symbol = 'square')) %>%
+  add_trace(x = n_values, y = O_n_R_1, type = 'scatter', mode = 'lines',
+            name = 'O(n)', line = list(color = 'black', dash = 'dash')) %>%
+  add_trace(x = n_values, y = O_n_python_1, type = 'scatter', mode = 'lines',
+            name = 'O(n)', line = list(color = 'black', dash = 'dash'), showlegend = FALSE) %>%
+  # add_trace(x = n_values, y = O_n_R_2, type = 'scatter', mode = 'lines',
+  #           name = 'O(n)', line = list(color = 'black', dash = 'dash'), showlegend = FALSE) %>%
+  # add_trace(x = n_values, y = O_n_python_2, type = 'scatter', mode = 'lines',
+  #           name = 'O(n)', line = list(color = 'black', dash = 'dash'), showlegend = FALSE) %>%
+  layout(title = "Execution Time",
+         xaxis = list(title = "log(B)", tickmode = "array", tickvals = 0:6, ticktext = as.character(0:6)),
+         yaxis = list(title = "Time (s)"),
+         legend = list(title = "Legend", orientation = "h", x = 0.3, y = -0.2))
+plot_ly() %>%
+  add_trace(data = R[R$Algorithm == algos[1],], x = ~log(n/10, 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'Metropolis_Hastings R',
+            line = list(color = "blue", dash = 'solid'),
+            marker = list(color = "blue", symbol = 'circle')) %>%
+  add_trace(data = R[R$Algorithm == algos[2],], x = ~log(n/10, 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'MCMC_stan R',
+            line = list(color = "blue", dash = 'dashdot'),
+            marker = list(color = "blue", symbol = 'square')) %>%
+  add_trace(data = python[python$Algorithm == algos[1],], x = ~log(n/10, 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'Metropolis_Hastings Python',
+            line = list(color = "red", dash = 'solid'),
+            marker = list(color = "red", symbol = 'dot')) %>%
+  add_trace(data = python[python$Algorithm == algos[2],], x = ~log(n/10, 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'MCMC_stan Python',
+            line = list(color = "red", dash = 'dashdot'),
+            marker = list(color = "red", symbol = 'square')) %>%
+  layout(title = "Memory usage",
+         xaxis = list(title = "log(B)", tickmode = "array", tickvals = 0:6, ticktext = as.character(0:6)),
+         yaxis = list(title = "Memory (MiB)"),
+         legend = list(title = "Legend", orientation = "h", x = 0.3, y = -0.2))
+```
+
+
+Both Python and R's execution times for Metropolis-Hastings seem to scale linearly with time as expected from the theoretical complexity, and R generally seems to be faster than Python particularly for a large number iterations at $B=10^5$. In this simple case of linear regression, running $10^5$ iterations is definitely uncessary and convergence was achieved way before but this may be needed for very complex models. Stan's execution time is very similar in both interfaces and it seems to scale even better than linearly for large number of iterations. Since Stan has much lower autocorrelation in the chains than Metroplis-Hastings, Stan actually has much higher effective sample size which makes it performance quite impressive, and $10^5$ iterations is typically more than necessary in Stan. We also see that memory usage blows up in R with 3GB of memory used for $10^5$ iterations, but it stays surprisingly low below 100MiB in Python.
+
+
+
+## SVM
+
+I will not say much about support vector machines (SVM) because I am not as familiar with this algorithm compared to statistical ones. Nonetheless, I thought it would be interesting to include a machine learning algorithm since this is often thought to be a major strength of Python through its large ecosystem of libraries. My understanding of the algorithm using a simple form of gradient descent is as follows.
+
+```plaintext
+Function svm(X, y, epochs, learning_rate, C)
+    // Initialize weight and bias parameters
+    w <- vector 0
+    b <- 0
+    
+    For each epoch from 1 to epochs
+        For each sample i from 1 to length of y
+            Decision_value <- X[i] dot (w + b)
+            
+            // Check if data is on the correct side of the margin
+            If y[i] * decision_value < 1 then
+                // Update w and b for incorrectly classified samples
+                w <- w + learning_rate * (y[i] * X[i] - 2 * (1/C) * w)
+                b <- b + learning_rate * y[i]
+            Else
+                // Update regularization for correctly classified samples
+                w <- w - learning_rate * (2 * (1/C) * w)
+            
+    Return w, b
+End Function
+```
+
+The initializations are $O(p)$ and $O(1)$, the outer loop runs for epochs iterations and the inner loop runs for $n$ interations, the product X[i] dot C is $O(p)$, so the overall complexity is $O(\text{epochs} \times n \times p)$. In this case, I am keeping epochs and p fixed and am increasing the sample size, so the complexity is $O(n)$.
+
+This is implemented in Python following the pseudocode and using the sklearn library as follows.
+
+```{python, eval = FALSE}
+# SVM from base
+def svm_base(X, y, epochs=100, learning_rate=0.01, C=1.0):
+    w = np.zeros(X.shape[1])
+    b = 0
+    for epoch in range(epochs):
+        for i in range(len(y)):
+            if y[i] * (np.dot(X[i], w) + b) < 1:
+                w += learning_rate * ((y[i] * X[i]) + (-2 * (1/C) * w))
+                b += learning_rate * y[i]
+            else:
+                w -= learning_rate * (2 * (1/C) * w)
+    return w, b
+
+# sklearn-Learn SVM
+def svm_sklearn(X, y):
+    clf = SVC(kernel='linear', C=1.0)
+    clf.fit(X, y)
+    return clf.coef_[0], clf.intercept_[0]
+```
+
+
+Likewise, this is implemented in R following a similar form and using a package called e1071.
+
+```{r, eval = FALSE}
+# Simple linear SVM from base
+svm_base <- function(X, y, epochs = 100, learning_rate = 0.01, lambda = 0.01) {
+  n_samples <- nrow(X)
+  n_features <- ncol(X)
+  weights <- matrix(0, nrow = n_features, ncol = 1)
+  intercept <- 0
+  
+  for (epoch in 1:epochs) {
+    for (i in 1:n_samples) {
+      if (y[i] * (crossprod(weights, X[i, ]) + intercept) < 1) {
+        weights <- weights + learning_rate * ((y[i] * matrix(X[i, ], ncol = 1)) - (2 * lambda * weights))
+        intercept <- intercept + learning_rate * y[i]
+      } else {
+        weights <- weights - learning_rate * (2 * lambda * weights)
+      }
+    }
+  }
+  list(coefficients = weights, intercept = intercept)
+}
+
+# SVM using e1071 package
+svm_e1071 <- function(X, y) {
+  model <- svm(x = X, y = as.factor(y), kernel = "linear")
+  list(coefficients = t(as.vector(model$coefs) %*% model$SV), intercept = -model$rho)
+}
+```
+
+
+
+```{r echo=FALSE}
+algos <- c("svm_base", "svm_package")
+n_values <- seq(1, 3, by = 0.1)
+O_n <- 10^n_values/10^2
+O_n_python_1 <- O_n*python[python$Algorithm == algos[1],]$Time[3]
+O_n_R_1 <- O_n*R[R$Algorithm == algos[1],]$Time[3]
+O_n_python_2 <- O_n*python[python$Algorithm == algos[2],]$Time[3]
+O_n_R_2 <- O_n*R[R$Algorithm == algos[2],]$Time[3]
+plot_ly() %>%
+  add_trace(data = R[R$Algorithm == algos[1],], x = ~log(sqrt(n), 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'SVM_scratch R',
+            line = list(color = "blue", dash = 'solid'),
+            marker = list(color = "blue", symbol = 'circle')) %>%
+  add_trace(data = R[R$Algorithm == algos[2],], x = ~log(sqrt(n), 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'SVM_e1071 R',
+            line = list(color = "blue", dash = 'dashdot'),
+            marker = list(color = "blue", symbol = 'square')) %>%
+  add_trace(data = python[python$Algorithm == algos[1],], x = ~log(sqrt(n), 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'SVM_scratch Python',
+            line = list(color = "red", dash = 'solid'),
+            marker = list(color = "red", symbol = 'dot')) %>%
+  add_trace(data = python[python$Algorithm == algos[2],], x = ~log(sqrt(n), 10), y = ~Time, 
+            type = 'scatter', mode = 'lines+markers', name = 'SVM_sklearn Python',
+            line = list(color = "red", dash = 'dashdot'),
+            marker = list(color = "red", symbol = 'square')) %>%
+  add_trace(x = n_values, y = O_n_R_1, type = 'scatter', mode = 'lines',
+            name = 'O(n)', line = list(color = 'black', dash = 'dash')) %>%
+  add_trace(x = n_values, y = O_n_python_1, type = 'scatter', mode = 'lines',
+            name = 'O(n)', line = list(color = 'black', dash = 'dash'), showlegend= FALSE) %>%
+  layout(title = "Execution Time",
+         xaxis = list(title = "log(n)", tickmode = "array", tickvals = 0:6, ticktext = as.character(0:6)),
+         yaxis = list(title = "Time (s)"),
+         legend = list(title = "Legend", orientation = "h", x = 0.3, y = -0.2))
+plot_ly() %>%
+  add_trace(data = R[R$Algorithm == algos[1],], x = ~log(sqrt(n), 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'SVM_scratch R',
+            line = list(color = "blue", dash = 'solid'),
+            marker = list(color = "blue", symbol = 'circle')) %>%
+  add_trace(data = R[R$Algorithm == algos[2],], x = ~log(sqrt(n), 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'SVM_e1071 R',
+            line = list(color = "blue", dash = 'dashdot'),
+            marker = list(color = "blue", symbol = 'square')) %>%
+  add_trace(data = python[python$Algorithm == algos[1],], x = ~log(sqrt(n), 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'SVM_scratch Python',
+            line = list(color = "red", dash = 'solid'),
+            marker = list(color = "red", symbol = 'dot')) %>%
+  add_trace(data = python[python$Algorithm == algos[2],], x = ~log(sqrt(n), 10), y = ~Memory, 
+            type = 'scatter', mode = 'lines+markers', name = 'SVM_sklearn Python',
+            line = list(color = "red", dash = 'dashdot'),
+            marker = list(color = "red", symbol = 'square')) %>%
+  layout(title = "Memory usage",
+         xaxis = list(title = "log(n)", tickmode = "array", tickvals = 0:6, ticktext = as.character(0:6)),
+         yaxis = list(title = "Memory (MiB)"),
+         legend = list(title = "Legend", orientation = "h", x = 0.3, y = -0.2))
+```
+
+Both the R and Python implementations from scratch seem to scale roughly linearly with sample size and R is generally faster than Python, but the package implementations of SVM are considerably faster. Memory usage is again strangely very low in R and there is no discernable trend.
+
+
+# Discussion {#discussion} 
+
+
+## Execution time performance
+
+R generally had better execution times for smaller to medium-sized datasets across all types of operations I tested. More specifically, R had faster loops for all sample sizes, faster vectorized operations for small-medium sample sizes, and faster matrix operations for small-medium sample sizes. Consistent with these results, linear regression which is just implemented as matrix operations was faster for small-medium sample sizes, and the bootstrap, MCMC, and SVM which are loop algorithms were faster overall in R. This may be due to R's efficient handling of vectorized operations and its optimization for operations commonly used in statistics and data manipulation. 
+
+However, Python exhibited better performance with large datasets, particularly in vectorized operations and matrix manipulations. Likewise, linear regression was faster in Python for large sample sizes. This is possibly due to its efficient libraries like NumPy, which are designed to handle large scale data efficiently.
+
+## Memory usage
+
+In most cases, I do not think that memory usage was well-measured in R, so I will not make overall statements about memory managemen. However, the bootstrap and MCMC were costly for memory in both languages. In addition, memory management in Python seemed to be for the most part agnostic to the type of operations executed, using similar memory for a simple sum loop and for the support vector machine algorithm.  In addition, Python did seem to request much more of my computer's memory than R, and I had to leave it running overnight to avoid running other operations simultaneously on my computer, but I do not think this is well-quantified. In addition, both languages are garbage-collected language, meaning that they automatically release memory when they check that the objects are not used, but memory at any given time is not necessarily representative of computational complexity.
+
+Even if the memory usage of an operation was well-measured in R and Python, it is not clear if it is desirable to have low or high memory usage, since low memory usage could be due to an efficient implementation or rather be due to poor memory attribution which ends up slowing down the program. Hence, there is a tradeoff between execution time and memory storage.
+
+## Other considerations
+In terms of code writing, I personally prefer R for most data science projects because I can very quickly analzye data in a couple lines without thinking much about the syntax. Also, I find the syntax of dplyr very clear for data manipulation, and I think that the high quality visualization of ggplot2 is clearly unmatched by matplotlib or any other library in python. However, if I have to implement a more complex operation, I often find R's syntax frustrating since I constantly have to look up obscure notations, and the execution is certainly much slower than a low-level language like C. On the other hand, Python is much better-supported for machine learning and for general purpose programming.
+
+In this project, a challenge for me was to store the simulated manner that can be easily read in both Python and R. If I was using just R I would use a .rds file containing all the data in an object with complex structure that can be easily imported. However, to be read in Python I had to save the data in several .csv files which were read with an awkward structure in Python and I had to include a worrisome errors='coerce' line which solved the problem that my file included both strings and numerics. This is mainly my fault because I do not know how to pogram in Python well, but R makes it (dangerously) easy to use different objects without thinking about structure too much. I find this to be a great advantage. For the purpose of this project, I did not really care much about importing the data smoothly since I was focused on making the algorithms comparable. An interesting aspect that I did not test was the speed of reading data, which I clearly don't know enough about to test fairly, but it can be a major consideration for large datasets. Another thing I did not consider was parallel computing, which can be implemented in both R and Python and can significantly speed up computations. There are also many other programming languages than Python and R that can be used in data science, such as Julia or on the other end of abstraction, C/C++.
+
+## Interactive visualization
+I used plotly to make the interactive plots in this page, and it is the first time I used interactive visualization. I did not really like this experience because I think the plots mostly end up distracting the user without conveying much more information. I find exploratory data visualization much easier and beautiful in ggplot2 or even base R. However, it also seems more interesting and eye-catching than a black-and-white plot you would read in a paper, particularly for blog post format like this.
+
+I also chose to plot the data on a log scale, which is difficult to interpret. For instance, we see that linear functions become very distorted. However, I thought this choice was reasonable to highlight the different needs of data science from small samples, which is my main area of interest, to big data. As a statistician, I also would have wished to convey uncertainty in these estimates. I used 10 iterations of each algorithm and computed the median, but it may have been interesting to find a way to include uncertainty on the plots, although it would have made the plots more cluttered than they already are.
+
+This was also my first time creating a website, which I forked from mmistakes/minimal-mistakes. I liked this format of using markdown notebook, which allowed to easily include text, code, and plots from different programming languages in an aesthetically pleasing format. However, the easiness of writing in a markdown file as opposed to HTML and CSS files comes at the cost of customization.
+
+## Is R or Python better?
+Clearly, computational performance is highly dependent on the situation, including the data dimension, the algorithm of interest, the easiness of optimizing code, and the machine used to compute it. Therefore, I cannot even answer the question of whether R or Python is faster for my uses and my computer, let alone for anyone else. However, in most of my everyday data science operations, my sample sizes are below $10^5$, and this simulation shows me that in that context R keeps up with Python and, to my surprise, is often better. In some cases, such as very large sample sizes or machine learning algorithms with well-implemented libraries, Python may be significantly faster. Overall, it does seem that R was much faster for me, which is particularly clear through the fact that the entire script was run in 9 minutes in R and in 126 minutes in Python.
