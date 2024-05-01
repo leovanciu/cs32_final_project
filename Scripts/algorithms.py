@@ -9,7 +9,7 @@ from sklearn.svm import SVC
 from sklearn.linear_model import LinearRegression
 import cmdstanpy
 
-## Define algorithms
+## Define algorithms 
 # Generic loop sum
 def loop_sum(n):
     sum = 0
@@ -127,6 +127,7 @@ def svm_base(X, y, epochs=100, learning_rate=0.01, C=1.0):
 
 ## Run algorithms and record execution time and memory
 def main():
+    # Record start time
     start_all = time.time()
     # Load simulated data
     path = "Data/linear_regression_data.csv"
@@ -162,10 +163,12 @@ def main():
             mem_usage = np.empty((10,13))
             for run in range(10):
                 print(run)
+                #Record time
                 start_time = time.time()
                 execute = loop_sum(n)
                 end_time = time.time()
                 duration[run, 0] = end_time - start_time
+                #Record memory
                 mem_usage[run, 0] = memory_usage((loop_sum, (n,)), max_usage=True)
 
                 start_time = time.time()

@@ -193,7 +193,7 @@ for (log_n in 2:6) {
     check = FALSE
   )
   
-  # Create result dataframe and store it in a list
+  # Store time and memory results in a list of dataframes
   result <- result %>%
     mutate(n = n) %>%
     select(expression, median, mem_alloc, n) %>%
