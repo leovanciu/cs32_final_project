@@ -130,11 +130,11 @@ def main():
     # Record start time
     start_all = time.time()
     # Load simulated data
-    path = "Data/linear_regression_data.csv"
+    path = "Data/data.csv"
     data = pd.read_csv(path).iloc[:, 1:]
-    path = "Data/A_data.csv"
+    path = "Data/A.csv"
     A = pd.read_csv(path).iloc[:, 1:].values
-    path = "Data/B_data.csv"
+    path = "Data/B.csv"
     B = pd.read_csv(path).iloc[:, 1:].values
     path_results = "Results/Results_python.csv"
     

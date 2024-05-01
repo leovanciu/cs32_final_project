@@ -1,5 +1,5 @@
 set.seed(32)
-
+setwd("/Users/ancavanciupopescu/Downloads/cs32_final_project-main/")
 # Generate linear regression data
 betas <- runif(10, -10, 10)
 X <- matrix(rnorm(1e6 * 10), ncol = 10)
