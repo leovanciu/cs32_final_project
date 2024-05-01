@@ -161,7 +161,6 @@ algo_names <- c('loop_sum','loop_geom_mean', 'vectorized_geom_mean', 'matrix_mul
 
 for (log_n in 2:6) {
   # Slice subset of data
-  print(log_n)
   n <- 10^log_n
   n_loop <- n / 10
   sqrt_n <- floor(sqrt(n))

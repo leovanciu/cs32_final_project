@@ -145,7 +145,6 @@ def main():
 
         for log_n in range(2, 7):
             # Select subset of data
-            print(log_n)
             n = int(10**log_n)
             n_loop = int(n/10)
             sqrt_n = int(math.floor(math.sqrt(n)))
@@ -162,7 +161,6 @@ def main():
             duration = np.empty((10,13))
             mem_usage = np.empty((10,13))
             for run in range(10):
-                print(run)
                 #Record time
                 start_time = time.time()
                 execute = loop_sum(n)
@@ -243,8 +241,6 @@ def main():
                 duration[run, 12] = end_time - start_time
                 mem_usage[run, 12] = memory_usage((MCMC_stan, (Xe3, ye3, n_loop)), max_usage=True)
 
-            print(mem_usage)
-            print(duration)
             algo_names = ['loop_sum','loop_geom_mean', 'vectorized_geom_mean', 'matrix_multiplication', 'matrix_inversion', 'linear_regression_package',
                       'linear_regression_base', 'bootstrap_package', 'bootstrap_base', 'svm_package', 'svm_base', 'Metropolis_Hastings', 'MCMC_stan']
             for i in range(13):
