@@ -42,7 +42,7 @@ lin_reg_package <- function(X, y) {
 # Linear regression from base
 lin_reg_base <- function(X, y) {
   Xb <- cbind(1, X)
-  betas <- solve(t(Xb) %*% Xb) %*% (t(Xb) %*% y)
+  beta_hat <- solve(t(Xb) %*% Xb) %*% (t(Xb) %*% y)
   return(betas)
 }
 

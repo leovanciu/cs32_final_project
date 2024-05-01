@@ -30,8 +30,8 @@ def vectorized_geom_mean(data):
 
 # Linear regression from base
 def lin_reg_base(X, y):
-    X_b = np.hstack([np.ones((X.shape[0], 1)), X])
-    beta_hat = np.linalg.inv(X_b.T @ X_b) @ (X_b.T @ y)
+    Xb = np.hstack([np.ones((X.shape[0], 1)), X])
+    beta_hat = np.linalg.inv(Xb.T @ Xb) @ (Xb.T @ y)
     return beta_hat
 
 # sklearn-Learn linear regression
